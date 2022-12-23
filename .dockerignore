@@ -1,0 +1,10 @@
+ar-static
+ar-static.exe
+test_data/
+debug/
+.git/
+.aws/
+**/*_test*.*
+LICENSE
+.pre-commit-config.yaml
+.gitignore

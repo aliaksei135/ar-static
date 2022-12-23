@@ -1,0 +1,4 @@
+ar-static
+ar-static.exe
+test_data/*.db
+debug/
