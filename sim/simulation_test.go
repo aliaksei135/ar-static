@@ -63,15 +63,16 @@ func TestSimulation_Run(t *testing.T) {
 
 	sim := Simulation{Traffic: traffic, Ownship: ownship, ConflictDistances: [2]float64{20, 20}}
 
-	tests := []struct {
-		name string
-		sim  *Simulation
-	}{
-		{"Run Sim", &sim},
+	firstPathPoint := sim.Ownship.Path[1]
+	sim.Traffic.Positions.Set(1, 0, firstPathPoint[0])
+	sim.Traffic.Positions.Set(1, 1, firstPathPoint[1])
+	sim.Traffic.Positions.Set(1, 2, firstPathPoint[2])
+
+	sim.Run()
+
+	if len(sim.ConflictLog) != 1 {
+		t.Fail()
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			tt.sim.Run()
-		})
-	}
+
+	sim.End()
 }
