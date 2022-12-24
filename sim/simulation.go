@@ -24,7 +24,8 @@ type Traffic struct {
 	// TrackDistr        hist.Histogram
 	// VerticalRateDistr hist.Histogram
 	// SurfaceEntrance   bool
-	randomSource *rand.Rand
+	randomSource  *rand.Rand
+	target_agents int
 
 	//State
 	Positions mat.Dense
@@ -44,11 +45,11 @@ func (tfc *Traffic) Setup(bounds [6]float64, target_density float64) {
 	tfc.randomSource = rand.New(rand.NewSource(tfc.Seed))
 
 	tfc.TotalVolume = math.Abs(tfc.x_bounds[1]-tfc.x_bounds[0]) * math.Abs(tfc.y_bounds[1]-tfc.y_bounds[0]) * math.Abs(tfc.z_bounds[1]-tfc.z_bounds[0])
-	target_agents := int(math.Ceil(target_density * tfc.TotalVolume))
+	tfc.target_agents = int(math.Ceil(target_density * tfc.TotalVolume))
 
-	tfc.Positions = *mat.NewDense(target_agents, 3, nil)
+	tfc.Positions = *mat.NewDense(tfc.target_agents, 3, nil)
 
-	tfc.AddAgents(target_agents)
+	tfc.AddAgents(tfc.target_agents)
 }
 
 func (tfc *Traffic) AddAgents(n_agents int) {
@@ -106,6 +107,7 @@ type Simulation struct {
 	ConflictLog       [][3]float64
 	T                 int
 	Timestep          float64
+	conflictRows      []int
 }
 
 func (sim *Simulation) Run() {
@@ -121,10 +123,21 @@ func (sim *Simulation) Run() {
 		sim.Ownship.Step()
 
 		for i := 0; i < sim.Traffic.Positions.RawMatrix().Rows; i++ {
+			skip := false
+			for c := 0; c < len(sim.conflictRows); c++ {
+				if sim.conflictRows[c] == i {
+					skip = true
+					break
+				}
+			}
+			if skip {
+				continue
+			}
 			xy_dist := math.Sqrt((sim.Traffic.Positions.At(i, 0)-sim.Ownship.position[0])*(sim.Traffic.Positions.At(i, 0)-sim.Ownship.position[0]) + ((sim.Traffic.Positions.At(i, 1) - sim.Ownship.position[1]) * (sim.Traffic.Positions.At(i, 1) - sim.Ownship.position[1])))
 			z_dist := math.Abs(sim.Traffic.Positions.At(i, 2) - sim.Ownship.position[2])
 			if xy_dist < sim.ConflictDistances[0] && z_dist < sim.ConflictDistances[1] {
 				sim.ConflictLog = append(sim.ConflictLog, [3]float64{sim.Ownship.position[0], sim.Ownship.position[1], sim.Ownship.position[2]})
+				sim.conflictRows = append(sim.conflictRows, i)
 			}
 		}
 		sim.T++
