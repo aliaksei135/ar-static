@@ -87,24 +87,6 @@ func simulateBatch(batch_size, batch_id int, chan_out chan []int64, bounds [6]fl
 	fmt.Printf("Completed batch %v \n", batch_id)
 }
 
-// func parseBounds(boundStr string) [6]float64 {
-// 	tokens := strings.Split(boundStr, ",")
-// 	var out [6]float64
-// 	for i, t := range tokens {
-// 		out[i], _ = strconv.ParseFloat(t, 64)
-// 	}
-// 	return out
-// }
-
-// func parseConflictDists(conflictStr string) [2]float64 {
-// 	tokens := strings.Split(conflictStr, ",")
-// 	var out [2]float64
-// 	for i, t := range tokens {
-// 		out[i], _ = strconv.ParseFloat(t, 64)
-// 	}
-// 	return out
-// }
-
 func main() {
 	log.SetFlags(0)
 	start := time.Now()
