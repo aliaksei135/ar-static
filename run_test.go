@@ -21,7 +21,7 @@ func Test_simulateBatch(t *testing.T) {
 
 	batch_size := 2000
 
-	result_chan := make(chan []int64, batch_size+1)
+	result_chan := make(chan SimResults, batch_size+1)
 	defer close(result_chan)
 
 	simulateBatch(batch_size, 0, result_chan, bounds, alt_hist, x_hist, y_hist, target_density, own_velocity, own_path, conflict_dist)

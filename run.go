@@ -1,11 +1,10 @@
 package main
 
 import (
+	"crypto/sha256"
 	"database/sql"
-	"encoding/csv"
 	"fmt"
 	"log"
-	"math"
 	"math/rand"
 	"net/http"
 	"os"
@@ -17,7 +16,9 @@ import (
 	"github.com/aliaksei135/ar-static/sim"
 	"github.com/aliaksei135/ar-static/util"
 	"github.com/google/uuid"
-	"gonum.org/v1/gonum/mat"
+
+	// "gonum.org/v1/gonum/mat"
+	// "encoding/csv"
 
 	"runtime"
 
@@ -39,10 +40,17 @@ const (
 	DEBUG = false
 )
 
-func simulateBatch(batch_size, batch_id int, chan_out chan []int64, bounds [6]float64, alt_hist, x_hist, y_hist hist.Histogram, target_density, own_velocity float64, path [][3]float64, conflict_dists [2]float64) {
-	f, _ := os.OpenFile(fmt.Sprintf("debug/%v.csv", SIM_ID), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
-	defer f.Close()
-	csvWriter := csv.NewWriter(f)
+type SimResults struct {
+	Id                string
+	Seed              int64
+	SimulatedRealTime int64
+	Conflicts         [][3]float64
+}
+
+func simulateBatch(batch_size, batch_id int, chan_out chan SimResults, bounds [6]float64, alt_hist, x_hist, y_hist hist.Histogram, target_density, own_velocity float64, path [][3]float64, conflict_dists [2]float64) {
+	// f, _ := os.OpenFile(fmt.Sprintf("debug/%v.csv", SIM_ID), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
+	// defer f.Close()
+	// csvWriter := csv.NewWriter(f)
 	for i := 0; i < batch_size; i++ {
 		seed := rand.Int63()
 		traffic := sim.Traffic{Seed: seed, AltitudeDistr: alt_hist, XDistr: x_hist, YDistr: y_hist}
@@ -54,35 +62,44 @@ func simulateBatch(batch_size, batch_id int, chan_out chan []int64, bounds [6]fl
 		sim := sim.Simulation{Traffic: traffic, Ownship: ownship, ConflictDistances: conflict_dists}
 		sim.Run()
 		sim.End()
-		pos_sum := 0.0
-		samples := int(math.Min(600, float64(len(sim.Traffic.Positions.RawMatrix().Data)-1)))
-		for j := 0; j < samples; j++ {
-			pos_sum += sim.Traffic.Positions.RawMatrix().Data[j]
+
+		trafficPositionStr := ""
+		for j := 0; j < sim.Traffic.Positions.RawMatrix().Rows; j++ {
+			trafficPositionStr += fmt.Sprintf("%v,%v,%v\n",
+				sim.Traffic.Positions.At(j, 0),
+				sim.Traffic.Positions.At(j, 1),
+				sim.Traffic.Positions.At(j, 2))
 		}
-		chan_out <- []int64{int64(pos_sum), seed, int64(float64(sim.T) * sim.Timestep), int64(len(sim.ConflictLog))}
+
+		hasher := sha256.New()
+		hasher.Write([]byte(trafficPositionStr))
+		simHash := hasher.Sum(nil)
+
+		simRes := SimResults{Id: fmt.Sprintf("%x", simHash), Seed: seed, SimulatedRealTime: int64(float64(sim.T) * sim.Timestep), Conflicts: sim.ConflictLog}
+		chan_out <- simRes
 		if i%int(batch_size/20) == 0 {
 			fmt.Printf("Completed %v sims (%v %%) in batch %v \n", i, 100*i/batch_size, batch_id)
 		}
 
-		if DEBUG && i%int(batch_size/5) == 0 {
-			traffic_positions := mat.DenseCopyOf(&traffic.Positions)
+		// if DEBUG && i%int(batch_size/5) == 0 {
+		// 	traffic_positions := mat.DenseCopyOf(&traffic.Positions)
 
-			n_agents := traffic_positions.RawMatrix().Rows
-			traffic_density := fmt.Sprint(float64(n_agents) / traffic.TotalVolume)
+		// 	n_agents := traffic_positions.RawMatrix().Rows
+		// 	traffic_density := fmt.Sprint(float64(n_agents) / traffic.TotalVolume)
 
-			agent_strs := make([][]string, n_agents)
-			for k := 0; k < n_agents; k++ {
-				posX := fmt.Sprint(traffic_positions.At(k, 0))
-				posY := fmt.Sprint(traffic_positions.At(k, 1))
-				posZ := fmt.Sprint(traffic_positions.At(k, 2))
+		// 	agent_strs := make([][]string, n_agents)
+		// 	for k := 0; k < n_agents; k++ {
+		// 		posX := fmt.Sprint(traffic_positions.At(k, 0))
+		// 		posY := fmt.Sprint(traffic_positions.At(k, 1))
+		// 		posZ := fmt.Sprint(traffic_positions.At(k, 2))
 
-				agent_str := []string{posX, posY, posZ, fmt.Sprint(n_agents), traffic_density}
-				agent_strs[k] = agent_str
-			}
-			DEBUG_WRITE_MUTEX.Lock()
-			_ = csvWriter.WriteAll(agent_strs)
-			DEBUG_WRITE_MUTEX.Unlock()
-		}
+		// 		agent_str := []string{posX, posY, posZ, fmt.Sprint(n_agents), traffic_density}
+		// 		agent_strs[k] = agent_str
+		// 	}
+		// 	DEBUG_WRITE_MUTEX.Lock()
+		// 	_ = csvWriter.WriteAll(agent_strs)
+		// 	DEBUG_WRITE_MUTEX.Unlock()
+		// }
 	}
 	fmt.Printf("Completed batch %v \n", batch_id)
 }
@@ -180,7 +197,7 @@ func main() {
 			}
 			fmt.Println("Created/Opened output database")
 
-			result_chan := make(chan []int64)
+			result_chan := make(chan SimResults)
 
 			n_batches := runtime.NumCPU()
 			batch_size := int(simOps / n_batches)
@@ -199,7 +216,7 @@ func main() {
 				go simulateBatch(batch_size, i, result_chan, *bounds, alt_hist, x_hist, y_hist, target_density, own_velocity, own_path, *conflict_dist)
 			}
 
-			sim_results := make([][]int64, n_batches*batch_size)
+			sim_results := make([]SimResults, n_batches*batch_size)
 
 			result_count := 0
 			for results := range result_chan {
@@ -211,10 +228,10 @@ func main() {
 				}
 			}
 			fmt.Printf("Formatting %v results for database insertion\n", len(sim_results))
-			value_fmt := "(%v, %v, %v, %v)"
+			value_fmt := "('%v', %v, %v, %v)"
 			string_results := make([]string, len(sim_results))
 			for idx, row := range sim_results {
-				string_results[idx] = fmt.Sprintf(value_fmt, row[0], row[1], row[2], row[3])
+				string_results[idx] = fmt.Sprintf(value_fmt, row.Id, row.Seed, row.SimulatedRealTime, len(row.Conflicts))
 			}
 			values_str := strings.Join(string_results, ",")
 			fmt.Println("Inserting results into database")
