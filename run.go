@@ -1,11 +1,13 @@
 package main
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
 	"fmt"
 	"log"
-	"math/rand"
+	"math"
+	"math/big"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -52,7 +54,11 @@ func simulateBatch(batch_size, batch_id int, chan_out chan SimResults, bounds [6
 	// defer f.Close()
 	// csvWriter := csv.NewWriter(f)
 	for i := 0; i < batch_size; i++ {
-		seed := rand.Int63()
+		randomNumber, err := rand.Int(rand.Reader, big.NewInt(math.MaxInt64))
+		if err != nil {
+			panic(err)
+		}
+		seed := randomNumber.Int64()
 		traffic := sim.Traffic{Seed: seed, AltitudeDistr: alt_hist, XDistr: x_hist, YDistr: y_hist}
 		traffic.Setup(bounds, target_density)
 
