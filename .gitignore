@@ -1,4 +1,7 @@
 ar-static
 ar-static.exe
-test_data/*.db
+**/*.csv
+test_data/
+!test_data/*.csv
 debug/
+*.sh
