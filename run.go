@@ -3,7 +3,8 @@ package main
 import (
 	"crypto/rand"
 	"crypto/sha256"
-	"database/sql"
+
+	// "database/sql"
 	"fmt"
 	"log"
 	"math"
@@ -18,6 +19,7 @@ import (
 	"github.com/aliaksei135/ar-static/sim"
 	"github.com/aliaksei135/ar-static/util"
 	"github.com/google/uuid"
+	"github.com/segmentio/parquet-go"
 
 	// "gonum.org/v1/gonum/mat"
 	// "encoding/csv"
@@ -43,10 +45,14 @@ const (
 )
 
 type SimResults struct {
-	Id                string
-	Seed              int64
-	SimulatedRealTime int64
-	Conflicts         [][3]float64
+	// PyArrow does not support delta encoding yet, so force plain on all
+	Id                string    `parquet:"id,snappy,plain"`
+	Seed              int64     `parquet:"seed,snappy,plain"`
+	SimulatedRealTime int32     `parquet:"simRealTime,snappy,plain"`
+	NConflicts        int32     `parquet:"nconflicts,snappy,plain"`
+	ConflictXs        []float32 `parquet:"conflictxs,list,snappy,plain"`
+	ConflictYs        []float32 `parquet:"conflictys,list,snappy,plain"`
+	ConflictZs        []float32 `parquet:"conflictzs,list,snappy,plain"`
 }
 
 func simulateBatch(batch_size, batch_id int, chan_out chan SimResults, bounds [6]float64, alt_hist, x_hist, y_hist hist.Histogram, target_density, own_velocity float64, path [][3]float64, conflict_dists [2]float64) {
@@ -81,7 +87,27 @@ func simulateBatch(batch_size, batch_id int, chan_out chan SimResults, bounds [6
 		hasher.Write([]byte(trafficPositionStr))
 		simHash := hasher.Sum(nil)
 
-		simRes := SimResults{Id: fmt.Sprintf("%x", simHash), Seed: seed, SimulatedRealTime: int64(float64(sim.T) * sim.Timestep), Conflicts: sim.ConflictLog}
+		nConflicts := int32(len(sim.ConflictLog))
+		conflictXs := []float32{}
+		conflictYs := []float32{}
+		conflictZs := []float32{}
+		if nConflicts > 0 {
+			for _, conflict := range sim.ConflictLog {
+				conflictXs = append(conflictXs, float32(conflict[0]))
+				conflictYs = append(conflictYs, float32(conflict[1]))
+				conflictZs = append(conflictZs, float32(conflict[2]))
+			}
+		}
+
+		simRes := SimResults{
+			Id:                fmt.Sprintf("%x", simHash),
+			Seed:              seed,
+			SimulatedRealTime: int32(float64(sim.T) * sim.Timestep),
+			NConflicts:        nConflicts,
+			ConflictXs:        conflictXs,
+			ConflictYs:        conflictYs,
+			ConflictZs:        conflictZs,
+		}
 		chan_out <- simRes
 		if i%int(batch_size/20) == 0 {
 			fmt.Printf("Completed %v sims (%v %%) in batch %v \n", i, 100*i/batch_size, batch_id)
@@ -179,29 +205,37 @@ func main() {
 		Action: func(ctx *cli.Context) error {
 			bounds := (*[6]float64)(util.CheckSliceLen(ctx.Float64Slice("bounds"), 6))
 			target_density := ctx.Float64("target-density")
-			alt_hist := hist.CreateHistogram(util.GetDataFromCSV(util.CheckPathExists(ctx.Path("altDataPath"))), 50)
-			x_hist := hist.CreateHistogram(util.GetDataFromCSV(util.CheckPathExists(ctx.Path("xDataPath"))), 50)
-			y_hist := hist.CreateHistogram(util.GetDataFromCSV(util.CheckPathExists(ctx.Path("yDataPath"))), 50)
+			alt_hist := hist.CreateHistogram(util.GetDataFromCSV(util.CheckPathExists(ctx.Path("altDataPath"))), 500)
+			x_hist := hist.CreateHistogram(util.GetDataFromCSV(util.CheckPathExists(ctx.Path("xDataPath"))), 8000)
+			y_hist := hist.CreateHistogram(util.GetDataFromCSV(util.CheckPathExists(ctx.Path("yDataPath"))), 8000)
 			own_path := util.GetPathDataFromCSV(util.CheckPathExists(ctx.Path("ownPath")))
 			own_velocity := ctx.Float64("ownVelocity")
 			conflict_dist := (*[2]float64)(util.CheckSliceLen(ctx.Float64Slice("conflictDists"), 2))
 			dbPath := ctx.Path("dbPath")
 			simOps := ctx.Int("simOps")
 
+			_, err := os.Stat(dbPath)
+			if os.IsNotExist(err) {
+				err = os.Mkdir(dbPath, os.ModePerm)
+				if err != nil {
+					log.Fatal("Could not create output directory")
+				}
+			}
+
 			if strings.HasPrefix(strings.ToLower(dbPath), "s3://") {
 				dbPath = filepath.Join(os.TempDir(), "results.db")
 			}
-			db, err := sql.Open("sqlite3", dbPath)
-			if err != nil {
-				log.Fatal(err)
-			}
-			defer db.Close()
+			// db, err := sql.Open("sqlite3", dbPath)
+			// if err != nil {
+			// 	log.Fatal(err)
+			// }
+			// defer db.Close()
 
-			_, err = db.Exec("CREATE TABLE IF NOT EXISTS sims(id, seed, timesteps, n_conflicts)")
-			if err != nil {
-				log.Fatal(err)
-			}
-			fmt.Println("Created/Opened output database")
+			// _, err = db.Exec("CREATE TABLE IF NOT EXISTS sims(id, seed, timesteps, n_conflicts)")
+			// if err != nil {
+			// 	log.Fatal(err)
+			// }
+			// fmt.Println("Created/Opened output database")
 
 			result_chan := make(chan SimResults)
 
@@ -233,19 +267,26 @@ func main() {
 					break
 				}
 			}
-			fmt.Printf("Formatting %v results for database insertion\n", len(sim_results))
-			value_fmt := "('%v', %v, %v, %v)"
-			string_results := make([]string, len(sim_results))
-			for idx, row := range sim_results {
-				string_results[idx] = fmt.Sprintf(value_fmt, row.Id, row.Seed, row.SimulatedRealTime, len(row.Conflicts))
+
+			fmt.Printf("Formatting %v results for parquet insertion\n", len(sim_results))
+			if err := parquet.WriteFile(dbPath+fmt.Sprintf("/%v.parquet", SIM_ID), sim_results, parquet.MaxRowsPerRowGroup(1e6)); err != nil {
+				log.Fatalf("Could not write to parquet file: %v", err.Error())
+
 			}
-			values_str := strings.Join(string_results, ",")
-			fmt.Println("Inserting results into database")
-			_, err = db.Exec("INSERT INTO sims VALUES " + values_str)
-			if err != nil {
-				log.Fatal(err)
-				return err
-			}
+
+			// fmt.Printf("Formatting %v results for database insertion\n", len(sim_results))
+			// value_fmt := "('%v', %v, %v, %v)"
+			// string_results := make([]string, len(sim_results))
+			// for idx, row := range sim_results {
+			// 	string_results[idx] = fmt.Sprintf(value_fmt, row.Id, row.Seed, row.SimulatedRealTime, len(row.Conflicts))
+			// }
+			// values_str := strings.Join(string_results, ",")
+			// fmt.Println("Inserting results into database")
+			// _, err = db.Exec("INSERT INTO sims VALUES " + values_str)
+			// if err != nil {
+			// 	log.Fatal(err)
+			// 	return err
+			// }
 
 			_, S3Upload := os.LookupEnv("S3_UPLOAD_RESULTS")
 			if S3Upload {
