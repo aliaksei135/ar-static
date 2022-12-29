@@ -1,7 +1,10 @@
 package hist
 
 import (
+	"encoding/csv"
+	"fmt"
 	"math/rand"
+	"os"
 
 	"github.com/aliaksei135/ar-static/util"
 
@@ -56,4 +59,21 @@ func TestHistogram_Sample(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestHistogram_Sampling(t *testing.T) {
+	f, _ := os.OpenFile("hist_test_sample_x.csv", os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
+	defer f.Close()
+	csvWriter := csv.NewWriter(f)
+
+	x_hist := CreateHistogram(util.GetDataFromCSV(util.CheckPathExists("../test_data/x.csv")), 8000)
+	samples := x_hist.Sample(80000, *rand.New(rand.NewSource(324)))
+
+	samples_strs := make([][]string, 80000)
+	for i, s := range samples {
+		samples_strs[i] = []string{fmt.Sprint(s)}
+	}
+
+	_ = csvWriter.WriteAll(samples_strs)
+	csvWriter.Flush()
 }
