@@ -3,14 +3,14 @@ package sim
 import (
 	"testing"
 
-	"github.com/aliaksei135/ar-static/hist"
+	"github.com/aclements/go-moremath/stats"
 	"github.com/aliaksei135/ar-static/util"
 )
 
 func TestTraffic_Setup(t *testing.T) {
-	alt_hist := hist.CreateHistogram(util.GetDataFromCSV("../test_data/alts.csv"), 200)
-	x_hist := hist.CreateHistogram(util.GetDataFromCSV(util.CheckPathExists("../test_data/x.csv")), 500)
-	y_hist := hist.CreateHistogram(util.GetDataFromCSV(util.CheckPathExists("../test_data/y.csv")), 500)
+	alt_hist := stats.KDE{Sample: stats.Sample{Xs: util.GetDataFromCSV("../test_data/alts.csv")}}
+	x_hist := stats.KDE{Sample: stats.Sample{Xs: util.GetDataFromCSV(util.CheckPathExists("../test_data/x.csv"))}}
+	y_hist := stats.KDE{Sample: stats.Sample{Xs: util.GetDataFromCSV(util.CheckPathExists("../test_data/y.csv"))}}
 	type args struct {
 		bounds         [6]float64
 		target_density float64
@@ -52,9 +52,9 @@ func TestOwnship_Step(t *testing.T) {
 }
 
 func TestSimulation_Run(t *testing.T) {
-	alt_hist := hist.CreateHistogram(util.GetDataFromCSV("../test_data/alts.csv"), 40)
-	x_hist := hist.CreateHistogram(util.GetDataFromCSV(util.CheckPathExists("../test_data/x.csv")), 500)
-	y_hist := hist.CreateHistogram(util.GetDataFromCSV(util.CheckPathExists("../test_data/y.csv")), 500)
+	alt_hist := stats.KDE{Sample: stats.Sample{Xs: util.GetDataFromCSV("../test_data/alts.csv")}}
+	x_hist := stats.KDE{Sample: stats.Sample{Xs: util.GetDataFromCSV(util.CheckPathExists("../test_data/x.csv"))}}
+	y_hist := stats.KDE{Sample: stats.Sample{Xs: util.GetDataFromCSV(util.CheckPathExists("../test_data/y.csv"))}}
 	traffic := Traffic{Seed: 321, AltitudeDistr: alt_hist, XDistr: x_hist, YDistr: y_hist}
 	traffic.Setup([6]float64{-145176.17270300398, -101964.24515822314, 6569893.199178016, 6595219.236650961, 0, 1524}, 1e-9)
 

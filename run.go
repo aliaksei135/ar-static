@@ -15,7 +15,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aliaksei135/ar-static/hist"
+	"github.com/aclements/go-moremath/stats"
+	// "github.com/aliaksei135/ar-static/hist"
 	"github.com/aliaksei135/ar-static/sim"
 	"github.com/aliaksei135/ar-static/util"
 	"github.com/google/uuid"
@@ -55,7 +56,7 @@ type SimResults struct {
 	ConflictZs        []float32 `parquet:"conflictzs,list,snappy,plain"`
 }
 
-func simulateBatch(batch_size, batch_id int, chan_out chan SimResults, bounds [6]float64, alt_hist, x_hist, y_hist hist.Histogram, target_density, own_velocity float64, path [][3]float64, conflict_dists [2]float64) {
+func simulateBatch(batch_size, batch_id int, chan_out chan SimResults, bounds [6]float64, alt_hist, x_hist, y_hist stats.KDE, target_density, own_velocity float64, path [][3]float64, conflict_dists [2]float64) {
 	// f, _ := os.OpenFile(fmt.Sprintf("debug/%v.csv", SIM_ID), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
 	// defer f.Close()
 	// csvWriter := csv.NewWriter(f)
@@ -205,9 +206,9 @@ func main() {
 		Action: func(ctx *cli.Context) error {
 			bounds := (*[6]float64)(util.CheckSliceLen(ctx.Float64Slice("bounds"), 6))
 			target_density := ctx.Float64("target-density")
-			alt_hist := hist.CreateHistogram(util.GetDataFromCSV(util.CheckPathExists(ctx.Path("altDataPath"))), 500)
-			x_hist := hist.CreateHistogram(util.GetDataFromCSV(util.CheckPathExists(ctx.Path("xDataPath"))), 8000)
-			y_hist := hist.CreateHistogram(util.GetDataFromCSV(util.CheckPathExists(ctx.Path("yDataPath"))), 8000)
+			alt_hist := stats.KDE{Sample: stats.Sample{Xs: util.GetDataFromCSV(util.CheckPathExists(ctx.Path("altDataPath")))}}
+			x_hist := stats.KDE{Sample: stats.Sample{Xs: util.GetDataFromCSV(util.CheckPathExists(ctx.Path("xDataPath")))}}
+			y_hist := stats.KDE{Sample: stats.Sample{Xs: util.GetDataFromCSV(util.CheckPathExists(ctx.Path("yDataPath")))}}
 			own_path := util.GetPathDataFromCSV(util.CheckPathExists(ctx.Path("ownPath")))
 			own_velocity := ctx.Float64("ownVelocity")
 			conflict_dist := (*[2]float64)(util.CheckSliceLen(ctx.Float64Slice("conflictDists"), 2))

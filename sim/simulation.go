@@ -4,7 +4,8 @@ import (
 	"math"
 	"math/rand"
 
-	"github.com/aliaksei135/ar-static/hist"
+	// "github.com/aliaksei135/ar-static/hist"
+	"github.com/aclements/go-moremath/stats"
 
 	"gonum.org/v1/gonum/mat"
 )
@@ -17,9 +18,9 @@ type Traffic struct {
 	TotalVolume float64
 
 	//Randomness
-	XDistr        hist.Histogram
-	YDistr        hist.Histogram
-	AltitudeDistr hist.Histogram
+	XDistr        stats.KDE
+	YDistr        stats.KDE
+	AltitudeDistr stats.KDE
 	// VelocityDistr     hist.Histogram
 	// TrackDistr        hist.Histogram
 	// VerticalRateDistr hist.Histogram
@@ -53,9 +54,18 @@ func (tfc *Traffic) Setup(bounds [6]float64, target_density float64) {
 }
 
 func (tfc *Traffic) AddAgents(n_agents int) {
-	xs := tfc.XDistr.Sample(n_agents, *tfc.randomSource)
-	ys := tfc.YDistr.Sample(n_agents, *tfc.randomSource)
-	zs := tfc.AltitudeDistr.Sample(n_agents, *tfc.randomSource)
+	xs := make([]float64, n_agents)
+	ys := make([]float64, n_agents)
+	zs := make([]float64, n_agents)
+	for i := 0; i < n_agents; i++ {
+		xs[i] = stats.Rand(&tfc.XDistr)(tfc.randomSource)
+		ys[i] = stats.Rand(&tfc.YDistr)(tfc.randomSource)
+		zs[i] = stats.Rand(&tfc.AltitudeDistr)(tfc.randomSource)
+	}
+
+	// xs := tfc.XDistr.Sample(n_agents, *tfc.randomSource)
+	// ys := tfc.YDistr.Sample(n_agents, *tfc.randomSource)
+	// zs := tfc.AltitudeDistr.Sample(n_agents, *tfc.randomSource)
 	for i := 0; i < n_agents; i++ {
 		tfc.Positions.Set(i, 0, xs[i])
 		tfc.Positions.Set(i, 1, ys[i])

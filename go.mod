@@ -8,6 +8,7 @@ require (
 )
 
 require (
+	github.com/aclements/go-moremath v0.0.0-20210112150236-f10218a38794 // indirect
 	github.com/andybalholm/brotli v1.0.3 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.2 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
